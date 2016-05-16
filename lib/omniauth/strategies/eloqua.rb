@@ -4,88 +4,85 @@ module OmniAuth
   module Strategies
     class Eloqua < OmniAuth::Strategies::OAuth2
 
-      args [:client_id, :client_secret] # ?
+      args [:client_id, :client_secret]
 
       option :name, "eloqua"
       option :provider_ignores_state, false
 
       option :client_options, {
         site: 'https://login.eloqua.com',
-        authorize_url: '/auth/oauth2/authorize'
+        authorize_url: '/auth/oauth2/authorize',
+        token_url: '/auth/oauth2/token'
       }
 
       option :authorize_options, [
         :response_type,
         :client_id,
         :redirect_uri,
-        :scope ] # ???
+        :scope
+      ]
 
       def request_phase
-        conn = Faraday.new(url: client.auth_code.authorize_url) do |faraday|
-          faraday.request  :url_encoded
-          faraday.response :logger
-          faraday.adapter  Faraday.default_adapter
-        end
-
-        response = conn.get( '', { grant_type: "client_credentials",
-                        client_secret: request.
-                          env['omniauth.strategy'].
-                          options[:client_secret]
-        })
-
-
-        # redirect callback_url
+        redirect client.auth_code.authorize_url(
+          {
+            redirect_uri: "#{options[:redirect_uri]}?response_type=code&state="\
+              "#{request.params['state']}"
+          }.merge(
+            options.authorize_params
+          )
+        )
       end
-
-
-      def eloqua_auth_url
-        client.
-          auth_code.
-          authorize_url({ redirect_uri: callback_url,
-                          grant_type: "client_credentials",
-                          client_secret: request.
-                            env['omniauth.strategy'].
-                            options[:client_secret]
-                         })
-      end
-
 
       def callback_phase
-        binding.pry
-#        if request.params['error'] || request.params['error_reason']
-          #raise CallbackError.new(request.params['error'], request.params['error_description'] || request.params['error_reason'], request.params['error_uri'])
-        #end
-        #if !options.provider_ignores_state && (request.params['state'].to_s.empty? || request.params['state'] != session.delete('omniauth.state'))
-          #raise CallbackError.new(nil, :csrf_detected)
-        #end
+        error = request.params["error_reason"] || request.params["error"]
+        if error
+          fail!(error, CallbackError.new(request.params["error"],
+            request.params["error_description"] ||
+            request.params["error_reason"], request.params["error_uri"]))
+        else
+          conn = Faraday.new(:url => 'https://login.eloqua.com/auth/'\
+            'oauth2/token') do |faraday|
+              faraday.response :logger
+              faraday.adapter  Faraday.default_adapter
+          end
 
-        #hash = Hashie::Mash.new
-        #hash.token = request.params['access_token']
-        #hash.refresh_token = request.params['refresh_token']
-        #hash.expires_in = request.params['expires_in']
-        #self.access_token = hash
+          token = Base64.strict_encode64("#{options.client_id.strip}:"\
+            "#{options.client_secret.strip}").strip
 
-        #self.env['omniauth.auth'] = auth_hash
-        #call_app!
-      #rescue ::OAuth2::Error, CallbackError => e
-        #fail!(:invalid_credentials, e)
-      #rescue ::MultiJson::DecodeError => e
-        #fail!(:invalid_response, e)
-      #rescue ::Timeout::Error, ::Errno::ETIMEDOUT, Faraday::Error::TimeoutError => e
-        #fail!(:timeout, e)
-      #rescue ::SocketError, Faraday::Error::ConnectionFailed => e
-        #fail!(:failed_to_connect, e)
-      #end
+          result = conn.post do |req|
+            req.headers['Content-Type'] = 'application/json'
+            req.headers['Authorization'] = "Basic #{token}"
+            req.body = "{ 'grant_type': 'authorization_code', 'code': "\
+              "'#{request.params["code"]}', 'redirect_uri': "\
+              "'#{options[:redirect_uri]}?response_type=code&state="\
+              "#{request.params['state']}' }"
+          end
 
-      #credentials do
-        #hash = {'token' => access_token['token']}
-        #hash.merge!('refresh_token' => access_token['refresh_token'])
-        #hash.merge!('expires_in' => access_token['expires_in'])
-        #hash.merge!('expires' => true)
-        #hash
-      #end
+          result = JSON.parse(result.body)
+
+          env['omniauth.auth'] = {
+            credentials: {
+              token: result["access_token"],
+              refresh_token: result["refresh_token"],
+              expires_in: result["expires_in"]
+            }
+          }
+          call_app!
+        end
+      rescue ::OAuth2::Error, CallbackError => e
+        fail!(:invalid_credentials, e)
+      rescue ::Timeout::Error, ::Errno::ETIMEDOUT => e
+        fail!(:timeout, e)
+      rescue ::SocketError => e
+        fail!(:failed_to_connect, e)
       end
 
+      def auth_hash
+        hash = AuthHash.new(:provider => name, :uid => uid)
+        hash.info = info unless skip_info?
+        hash.credentials = credentials if credentials
+        hash
+      end
     end
   end
 end
