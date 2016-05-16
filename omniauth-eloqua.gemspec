@@ -13,7 +13,7 @@ Gem::Specification.new do |gem|
 
   gem.authors       = ["Kristen Kehlenbeck", "Colin Petruno"]
   gem.email         = ["kristen@attend.com", "colin@attend.com"]
-  gem.description   = %q{An OmniAuth strategy for authenticating with the Eloqua REST Api.}
+  gem.description   = %q{An OmniAuth strategy for authenticating with the Eloqua REST API.}
   gem.summary       = %q{OmniAuth strategy for authenticating with Eloqua.}
   gem.homepage      = "https://github.com/AttendDotCom/omniauth-eloqua"
   gem.license       = "GPL v3"
