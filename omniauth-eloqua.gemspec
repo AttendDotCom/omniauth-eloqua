@@ -25,4 +25,3 @@ Gem::Specification.new do |gem|
   gem.require_paths = ["lib"]
   gem.version       = OmniAuth::Eloqua::VERSION
 end
-
